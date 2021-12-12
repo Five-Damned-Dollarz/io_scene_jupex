@@ -9,6 +9,7 @@ bl_info={
 	"category": "Import-Export",
 }
 
+import os
 import bpy
 import bpy_extras
 import bmesh
@@ -18,6 +19,8 @@ from mathutils import Vector
 from enum import IntEnum
 
 import struct
+
+_GameDataFolder=r"F:\FEAR Stuff\FEAR Public Tools v2\Dev\Runtime\Game"
 
 class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 	bl_idname="io_scene_jupex.world_loader"
@@ -31,11 +34,10 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		maxlen=255,
 	)
 
-	'''
 	game_data_folder: StringProperty(
 		name="Game Folder",
 		description="Choose a directory:",
-		default="",
+		default=r"F:\FEAR Stuff\FEAR Public Tools v2\Dev\Runtime\Game",
 		maxlen=260,
 		subtype="DIR_PATH"
 	)
@@ -48,7 +50,7 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 
 	import_nav_mesh: BoolProperty(
 		name="Import Nav Mesh",
-		description=""
+		description="",
 		default=False
 	)
 
@@ -58,7 +60,6 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		box=layout.box()
 		box.label(text="Data")
 		box.row().prop(self, "game_data_folder")
-	'''
 
 	def execute(self, context):
 		with open(self.filepath, "rb") as f:
@@ -181,6 +182,23 @@ class VertexDefinition(object):
 	def __init__(self):
 		self.properties=[]
 
+	def read(self, file):
+		size=ReadRaw(file, "I")[0]
+
+		for i in range(int(size/8)):
+			shorts=ReadRaw(file, "2H")
+			bytes=ReadRaw(file, "4b")
+
+			if shorts[0]==255:
+				break
+
+			prop=VertexProperty()
+			prop.format=VertexPropertyFormat(bytes[0])
+			prop.location=VertexPropertyLocation(bytes[2])
+			prop.id=bytes[3]
+
+			self.properties.append(prop)
+
 	def readVertex(self, vertex_data) -> Vertex:
 		temp_vert=Vertex()
 
@@ -297,62 +315,49 @@ class RenderSurface(object):
 		#print("SURFACE TRI COUNT", len(self.indices))
 
 def ReadRenderMesh(file, section_counts):
-	mesh_counts=ReadRaw(file, "3I")
+	mesh_counts=ReadRaw(file, "3I") # (_, surface_count, material_count)=ReadRaw(file, "3I")
 	block_sizes=ReadRaw(file, "2I")
 
 	vertex_data=file.read(block_sizes[0])
 	triangulation_data=file.read(block_sizes[1])
 
-	struct_type_count=ReadRaw(file, "I")
+	vertex_def_count=ReadRaw(file, "I")[0]
 	vertex_defs=[]
-	for i in range(struct_type_count[0]):
-		vertex_defs.append(ReadStructDef(file))
+	for i in range(vertex_def_count):
+		vertex_def=VertexDefinition()
+		vertex_def.read(file)
+		vertex_defs.append(vertex_def)
 
-	render_surface_count=ReadRaw(file, "I")
+	render_surface_count=ReadRaw(file, "I")[0]
 	render_surfaces=[]
-
-	for i in range(render_surface_count[0]):
+	for i in range(render_surface_count):
 		surface=RenderSurface()
 		surface.read(file, vertex_defs, vertex_data, triangulation_data)
 		render_surfaces.append(surface)
+
+	materials=[]
+	for i in range(mesh_counts[2]):
+		mat_name=ReadLTString(file)
+		print(mat_name)
+
+		material=Material()
+		material.read(open(os.path.join(_GameDataFolder, mat_name), "rb"))
+
+		materials.append(material)
 
 	collection=bpy.data.collections.new("Surfaces")
 	bpy.context.scene.collection.children.link(collection)
 
 	for i in render_surfaces:
-		TestRenderSurface(i, collection)
-
-	for i in range(mesh_counts[2]):
-		print(ReadLTString(file))
+		TestRenderSurface(i, materials, collection)
 
 	for i in range(section_counts[0]):
 		ReadRenderTree(file)
 
-def ReadStructDef(file):
-	size=ReadRaw(file, "I")
-
-	def_=VertexDefinition()
-
-	for i in range(int(size[0]/8)):
-		shorts=ReadRaw(file, "2H")
-		bytes=ReadRaw(file, "4b")
-
-		if shorts[0]==255:
-			break
-
-		prop=VertexProperty()
-		prop.format=VertexPropertyFormat(bytes[0])
-		prop.location=VertexPropertyLocation(bytes[2])
-		prop.id=bytes[3]
-
-		def_.properties.append(prop)
-
-	return def_
-
 def ReadRenderTree(file):
-	count=ReadRaw(file, "I")
+	count=ReadRaw(file, "I")[0]
 
-	for i in range(count[0]):
+	for i in range(count):
 		ReadRenderNode(file)
 
 def ReadRenderNode(file):
@@ -375,7 +380,7 @@ def ReadRenderNode(file):
 		for j in range(count[0]):
 			ReadVector(file)
 
-def TestRenderSurface(surface, collection):
+def TestRenderSurface(surface, materials, collection):
 	mesh=bpy.data.meshes.new("Surface Test")
 	mesh_obj=bpy.data.objects.new("Surface Obj", mesh)
 
@@ -412,7 +417,127 @@ def TestRenderSurface(surface, collection):
 		uv=surface.vertices[loop.vertex_index].tex_coords
 		uv_layer.data[i].uv=uv
 
+	mesh.materials.append(materials[surface.material_id].material)
+
 	mesh.validate(clean_customdata=False)
 	mesh.update(calc_edges=False)
 
 	collection.objects.link(mesh_obj)
+
+	if (materials[surface.material_id].name=="shadowvolume"):
+		mesh_obj.hide_set(True) # just to clean up the view a bit
+
+### Materials
+
+_MaterialMagicConstant=b"LTMI"
+
+class Material(object):
+	class Fx(object):
+		class DefType(IntEnum):
+			String=1
+			Vector3f=2
+			Vector4f=3
+			Int=4
+			Float=5
+
+		'''
+		class DefNames(str, Enum):
+			"fMaxSpecularPower" # 0-255
+			"fNormalMapScale" # 0-1
+			"fReflectionBumpScale" # 0-1
+
+			# fNoise#Frequency # 0-1
+			# fNoise#Amplitude # 0-1
+
+			"vBaseColor"
+
+			# textures
+			Diffuse="tDiffuseMap"
+			Normal="tNormalMap"
+			Emissive="tEmissiveMap"
+			Specular="tSpecularMap"
+			ReflectionMap="tReflectionMap"
+			RoughnessMap="tRoughnessMap"
+			WaveMap="tWaveMap"
+			EnvironmentMap="tEnvironmentMap"
+			EnvironmentMask="tEnvironmentMapMask"
+
+		file_path=os.path.join(game_data_folder, diffuse_tex_file)
+		image=bpy.data.image.load(filepath=file_path)
+		'''
+
+		def __init__(self):
+			self.file_name=""
+			self.definitions={}
+
+		def read(self, file):
+			self.file_name=ReadLTString(file)
+			count=ReadRaw(file, "I")[0]
+
+			for _ in range(count):
+				type_=ReadRaw(file, "I")[0]
+				def_name=ReadLTString(file)
+
+				value=None
+
+				if type_==Material.Fx.DefType.String:
+					value=ReadLTString(file)
+				elif type_==Material.Fx.DefType.Vector3f:
+					value=ReadVector(file)
+				elif type_==Material.Fx.DefType.Vector4f:
+					value=ReadRaw(file, "4f")
+				elif type_==Material.Fx.DefType.Int:
+					value=ReadRaw(file, "i")[0]
+				elif type_==Material.Fx.DefType.Float:
+					value=ReadRaw(file, "f")[0]
+				else:
+					raise ValueError("Unknown DefType {}".format(type_))
+
+				self.definitions[def_name]=(type_, value)
+
+		def getDefinition(self, def_name):
+			return self.definitions[def_name][1]
+
+	def __init__(self):
+		self.name=""
+		self.material=None
+
+		self.fx=[]
+
+	def read(self, file):
+		self.name=os.path.splitext(os.path.basename(file.name))[0]
+
+		(magic, count)=ReadRaw(file, "4sI")
+
+		if magic!=_MaterialMagicConstant:
+			raise ValueError("Not a material file {}, expected {}", magic, _MaterialMagicConstant)
+
+		assert(count>0, "Material {} doesn't contain any shaders", self.name)
+
+		for _ in range(count):
+			new_fx=Material.Fx()
+			new_fx.read(file)
+			self.fx.append(new_fx)
+
+		self.createMaterial()
+
+	def createMaterial(self):
+		new_material=bpy.data.materials.new(self.name)
+		new_material.use_nodes=True
+
+		out_node=new_material.node_tree.nodes["Principled BSDF"]
+		texture_image=new_material.node_tree.nodes.new("ShaderNodeTexImage")
+		new_material.node_tree.links.new(out_node.inputs["Base Color"], texture_image.outputs["Color"])
+
+		# set some defaults
+		out_node.inputs["Specular"].default_value=64.0/255.0
+
+		try:
+			texture_name=self.fx[0].getDefinition("tDiffuseMap")
+			texture_image.image=bpy.data.images.load(filepath=os.path.join(_GameDataFolder, texture_name))
+
+			out_node.inputs["Specular"].default_value=self.fx[0].getDefinition("fMaxSpecularPower")/255.0
+		except:
+			pass
+
+		self.material=new_material
