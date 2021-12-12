@@ -31,15 +31,36 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		maxlen=255,
 	)
 
-	def execute(self, context):
-		# massively increase camera clipping because 1000m is not enough for even a normal sized room
-		for area in bpy.context.screen.areas:
-			if area.type=="VIEW_3D":
-				for space in area.spaces:
-					if space.type=="VIEW_3D":
-						if space.clip_end<100000.0:
-							space.clip_end=10000.0
+	'''
+	game_data_folder: StringProperty(
+		name="Game Folder",
+		description="Choose a directory:",
+		default="",
+		maxlen=260,
+		subtype="DIR_PATH"
+	)
 
+	import_bsps: BoolProperty(
+		name="Import BSPs",
+		description="",
+		default=False
+	)
+
+	import_nav_mesh: BoolProperty(
+		name="Import Nav Mesh",
+		description=""
+		default=False
+	)
+
+	def draw(self, context):
+		layout=self.layout
+
+		box=layout.box()
+		box.label(text="Data")
+		box.row().prop(self, "game_data_folder")
+	'''
+
+	def execute(self, context):
 		with open(self.filepath, "rb") as f:
 			header=Header()
 			header.read(f)
@@ -48,6 +69,14 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 			f.seek(header.render_section) # skip to render section
 			render_section=ReadRaw(f, "10I")
 			ReadRenderMesh(f, render_section)
+
+		# massively increase camera clipping because 1000m is not enough for even a normal sized room
+		for area in bpy.context.screen.areas:
+			if area.type=="VIEW_3D":
+				for space in area.spaces:
+					if space.type=="VIEW_3D":
+						if space.clip_end<10000.0:
+							space.clip_end=100000.0
 
 		return {"FINISHED"}
 
@@ -118,11 +147,11 @@ class Vertex(object):
 		self.position=Vector()
 		self.normal=Vector()
 
-		self.tex_coords=Vector()
+		self.tex_coords=Vector([0, 0])
 
 		self.tangent=Vector()
 		self.binormal=Vector()
-		self.colour=Vector()
+		self.colour=Vector([0, 0, 0, 0])
 
 class VertexPropertyFormat(IntEnum):
 	Float_x2=1 # Vector2f
@@ -180,6 +209,7 @@ class VertexDefinition(object):
 			idx+=pack_size
 
 			if prop.id>0: # handle this properly!
+				print("Unhandled vertex property, id > 0")
 				continue
 
 			if prop.location==VertexPropertyLocation.Position:
@@ -191,7 +221,7 @@ class VertexDefinition(object):
 			elif prop.location==VertexPropertyLocation.Normal:
 				temp_vert.normal=Vector([unpacked[0], unpacked[2], unpacked[1]])
 			elif prop.location==VertexPropertyLocation.TexCoords:
-				temp_vert.tex_coords=Vector([unpacked[0], unpacked[1]])
+				temp_vert.tex_coords=Vector([unpacked[0], 1.0-unpacked[1]])
 			elif prop.location==VertexPropertyLocation.Tangent:
 				temp_vert.tangent=Vector([unpacked[0], unpacked[2], unpacked[1]])
 			elif prop.location==VertexPropertyLocation.Binormal:
@@ -370,6 +400,17 @@ def TestRenderSurface(surface, collection):
 
 	bm.to_mesh(mesh)
 	bm.free()
+
+	### Texture mapping
+
+	uv_layer=mesh.uv_layers.new()
+
+	uv_layer.active=True
+	uv_layer.active_render=True
+
+	for i, loop in enumerate(mesh.loops):
+		uv=surface.vertices[loop.vertex_index].tex_coords
+		uv_layer.data[i].uv=uv
 
 	mesh.validate(clean_customdata=False)
 	mesh.update(calc_edges=False)
