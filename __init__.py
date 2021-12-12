@@ -20,7 +20,7 @@ from enum import IntEnum
 
 import struct
 
-_GameDataFolder=r"F:\FEAR Stuff\FEAR Public Tools v2\Dev\Runtime\Game"
+_GameDataFolder=r""
 
 class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 	bl_idname="io_scene_jupex.world_loader"
@@ -34,12 +34,18 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		maxlen=255,
 	)
 
+	def updateGameDataFolder(self, context):
+		global _GameDataFolder
+		_GameDataFolder=os.fspath(self.game_data_folder)
+		return None
+
 	game_data_folder: StringProperty(
 		name="Game Folder",
-		description="Choose a directory:",
+		description="Folder containing all the extracted assets, must be the root folder containing GameClient.dll and GameServer.dll",
 		default=r"F:\FEAR Stuff\FEAR Public Tools v2\Dev\Runtime\Game",
 		maxlen=260,
-		subtype="DIR_PATH"
+		subtype="DIR_PATH",
+		update=updateGameDataFolder
 	)
 
 	import_bsps: BoolProperty(
@@ -340,6 +346,7 @@ def ReadRenderMesh(file, section_counts):
 		mat_name=ReadLTString(file)
 		print(mat_name)
 
+		global _GameDataFolder
 		material=Material()
 		material.read(open(os.path.join(_GameDataFolder, mat_name), "rb"))
 
@@ -461,9 +468,6 @@ class Material(object):
 			WaveMap="tWaveMap"
 			EnvironmentMap="tEnvironmentMap"
 			EnvironmentMask="tEnvironmentMapMask"
-
-		file_path=os.path.join(game_data_folder, diffuse_tex_file)
-		image=bpy.data.image.load(filepath=file_path)
 		'''
 
 		def __init__(self):
@@ -512,7 +516,7 @@ class Material(object):
 		if magic!=_MaterialMagicConstant:
 			raise ValueError("Not a material file {}, expected {}", magic, _MaterialMagicConstant)
 
-		assert(count>0, "Material {} doesn't contain any shaders", self.name)
+		assert count>0, "Material {} doesn't contain any shaders".format(self.name)
 
 		for _ in range(count):
 			new_fx=Material.Fx()
@@ -530,7 +534,7 @@ class Material(object):
 		new_material.node_tree.links.new(out_node.inputs["Base Color"], texture_image.outputs["Color"])
 
 		# set some defaults
-		out_node.inputs["Specular"].default_value=64.0/255.0
+		out_node.inputs["Specular"].default_value=0.0 # 64.0/255.0
 
 		try:
 			texture_name=self.fx[0].getDefinition("tDiffuseMap")
