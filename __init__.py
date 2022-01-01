@@ -5,20 +5,31 @@ bl_info={
 	"version": (0,0,0,0,0,00,0,0,0,00,0,0,0,00,0,0,0,00),
 	"blender": (2, 90, 0),
 	"location": "File > Import-Export",
+	"warning": "Extremely early development.",
 	"support": "COMMUNITY",
 	"category": "Import-Export",
 }
 
 import os
+from math import ceil
 import bpy
 import bpy_extras
 import bmesh
-from bpy.props import StringProperty, BoolProperty, FloatProperty
+from bpy.props import StringProperty, BoolProperty, FloatProperty, EnumProperty
 from mathutils import Vector
 
 from enum import IntEnum
 
 import struct
+
+# Python's import system sucks so much!
+from .utils import ReadRaw, ReadVector, ReadLTString, ReadCString
+from . import WorldModels
+from . import WorldObjects
+
+import importlib
+importlib.reload(WorldModels)
+importlib.reload(WorldObjects)
 
 _GameDataFolder=r""
 
@@ -29,7 +40,7 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 	filename_ext=".world00p"
 
 	filter_glob: StringProperty(
-		default="*.world00p",
+		default="*.world00p;*.wld",
 		options={'HIDDEN'},
 		maxlen=255,
 	)
@@ -48,9 +59,34 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		update=updateGameDataFolder
 	)
 
+	game_identity: EnumProperty(
+		items=[
+			("game_id_fear", "FEAR", "FEAR, FEAR: Extraction Point, and FEAR: Perseus Mandate", 0),
+			("game_id_district187", "District 187", "District 187, also known as S2 Son Silah", 1),
+			("game_id_fear_2", "FEAR 2", "FEAR 2: Project Origin", 2)
+		],
+		name="Game",
+		description="Select the game the imported world is from",
+		default=0
+	)
+
 	import_bsps: BoolProperty(
 		name="Import BSPs",
+		description="Currently only supports FEAR 1",
+		default=False
+	)
+
+	import_render_surfaces: BoolProperty(
+		name="Import Render Surfaces",
 		description="",
+		default=True
+	)
+
+	# TODO: import_materials: BoolProperty; improves performance if you only care about geometry
+
+	import_objects: BoolProperty(
+		name="Import Objects",
+		description="Currently only supports Light objects",
 		default=False
 	)
 
@@ -65,7 +101,15 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 
 		box=layout.box()
 		box.label(text="Data")
+		box.row().prop(self, "game_identity")
 		box.row().prop(self, "game_data_folder")
+
+		box=layout.box()
+		box.label(text="Import Options")
+		box.row().prop(self, "import_bsps")
+		box.row().prop(self, "import_render_surfaces")
+		box.row().prop(self, "import_objects")
+		#box.row().prop(self, "import_nav_mesh")
 
 	def execute(self, context):
 		with open(self.filepath, "rb") as f:
@@ -73,12 +117,19 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 			header.read(f)
 			print(header)
 
-			f.seek(header.render_section) # skip to render section
-			render_section=ReadRaw(f, "10I")
-			ReadRenderMesh(f, render_section)
+			if self.import_bsps:
+				f.seek(56) # not needed
+				wm_section=WorldModels.WorldModelSection()
+				wm_section.read(f, 399) # TODO: magic number from game_identity EnumProperty
 
-			f.seek(header.object_section)
-			ReadObjects(f)
+			if self.import_render_surfaces:
+				f.seek(header.render_section)
+				render_section=ReadRaw(f, "10I")
+				ReadRenderMesh(f, render_section)
+
+			if self.import_objects:
+				f.seek(header.object_section)
+				WorldObjects.ReadObjects(f)
 
 		# massively increase camera clipping because 1000m is not enough for even a normal sized room
 		for area in bpy.context.screen.areas:
@@ -102,20 +153,7 @@ def unregister():
 	bpy.utils.unregister_class(WorldLoader)
 	bpy.types.TOPBAR_MT_file_import.remove(WorldLoader.menu_func_import)
 
-''' Python is incapable of allowing me simple import functionality, so fuck you '''
-
-def ReadRaw(file, format):
-	buf=struct.unpack(format, file.read(struct.calcsize(format)))
-	#print(buf)
-	return buf
-
-def ReadVector(file):
-	return ReadRaw(file, "3f")
-
-def ReadLTString(file):
-	return file.read(struct.unpack("H", file.read(2))[0]).decode("ascii")
-
-###
+### Header Section
 
 _VersionConstant=113
 
@@ -146,11 +184,13 @@ class Header(object):
 		if self.version!=_VersionConstant:
 			raise ValueError("Incorrect world version {}, expected {}".format(self.version, _VersionConstant))
 
-		(self.render_section, self.sector_section, self.object_section, self.unk_section)=ReadRaw(file, "4I")
+		self.render_section, self.sector_section, self.object_section, self.unk_section=ReadRaw(file, "4I")
 
 		self.bounds_min=ReadVector(file)
 		self.bounds_max=ReadVector(file)
 		self.world_offset=ReadVector(file)
+
+### Render Section
 
 class Vertex(object):
 	def __init__(self):
@@ -319,7 +359,7 @@ class RenderSurface(object):
 			self.indices.append(verts)
 
 def ReadRenderMesh(file, section_counts):
-	mesh_counts=ReadRaw(file, "3I") # (_, surface_count, material_count)=ReadRaw(file, "3I")
+	_, surface_count, material_count=ReadRaw(file, "3I")
 	block_sizes=ReadRaw(file, "2I")
 
 	vertex_data=file.read(block_sizes[0])
@@ -341,14 +381,15 @@ def ReadRenderMesh(file, section_counts):
 
 	materials=[]
 	material_errors=[]
-	for i in range(mesh_counts[2]):
+	for i in range(material_count):
 		mat_name=None
 
 		try:
 			mat_name=ReadLTString(file)
-		except UnicodeDecodeError as e:
-			material_errors.append(mat_name)
-			mat_name=r"Materials\Default.Mat00"
+		except (EnvironmentError, IOError, UnicodeDecodeError) as e: # rarely a material is missing or a name string is corrupt
+			# not sure what to do here, maybe not setting a material is better for programmatic selection later?
+			#material_errors.append(mat_name)
+			#mat_name=r"Materials\Default.Mat00"
 			pass
 
 		global _GameDataFolder
@@ -361,14 +402,14 @@ def ReadRenderMesh(file, section_counts):
 
 		materials.append(material)
 
-	collection=bpy.data.collections.new("Surfaces")
+	collection=bpy.data.collections.new("Render Surfaces")
 	bpy.context.scene.collection.children.link(collection)
 
 	for i in render_surfaces:
 		TestRenderSurface(i, materials, collection)
 
-	for i in range(section_counts[0]):
-		ReadRenderTree(file)
+	#for i in range(section_counts[0]):
+	#	ReadRenderTree(file)
 
 	print(material_errors)
 
@@ -398,9 +439,9 @@ def ReadRenderNode(file):
 		for j in range(count[0]):
 			ReadVector(file)
 
-def TestRenderSurface(surface, materials, collection):
-	mesh=bpy.data.meshes.new("Surface Test")
-	mesh_obj=bpy.data.objects.new("Surface Obj", mesh)
+def TestRenderSurface(surface: RenderSurface, materials, collection):
+	mesh=bpy.data.meshes.new("RSurface")
+	mesh_obj=bpy.data.objects.new("Render Surface", mesh)
 
 	bm=bmesh.new()
 	bm.from_mesh(mesh)
@@ -516,14 +557,14 @@ class Material(object):
 	def __init__(self):
 		self.name=None
 		self.material=None
-		self.blend=False
+		#self.blend=False
 
 		self.fx=[]
 
 	def read(self, file):
 		self.name=os.path.splitext(os.path.basename(file.name))[0]
 
-		(magic, count)=ReadRaw(file, "4sI")
+		magic, count=ReadRaw(file, "4sI")
 
 		if magic!=_MaterialMagicConstant:
 			raise ValueError("Not a material file {}, expected {}", magic, _MaterialMagicConstant)
@@ -534,8 +575,8 @@ class Material(object):
 			new_fx=Material.Fx()
 			new_fx.read(file)
 
-			if "translucent" in new_fx.file_name.lower() or "alpha" in new_fx.file_name.lower():
-				self.blend=True
+			#if any(_ in ["translucent", "alpha"] for _ in new_fx.file_name.lower()):
+			#	self.blend=True
 
 			self.fx.append(new_fx)
 
@@ -546,8 +587,8 @@ class Material(object):
 		new_material.use_nodes=True
 
 		new_material.blend_method="OPAQUE"
-		if self.blend==True:
-			new_material.blend_method="BLEND"
+		#if self.blend==True:
+		#	new_material.blend_method="BLEND"
 
 		out_node=new_material.node_tree.nodes["Principled BSDF"]
 		texture_image=new_material.node_tree.nodes.new("ShaderNodeTexImage")
@@ -566,81 +607,3 @@ class Material(object):
 			pass
 
 		self.material=new_material
-
-### Objects
-
-def ReadCString(buffer):
-	return buffer.split(b'\x00')[0].decode("ascii")
-
-class ObjectPropertyType(IntEnum):
-	String=0
-	Vector=1
-	Colour=2
-	Float=3
-	Int=4
-	Flags=5
-	Quaternion=6
-	CommandString=7
-	Text=8
-
-class Object(object):
-	def __init__(self):
-		self.type_name=None
-		self.properties={}
-
-	def read(self, file):
-		self.type_name=ReadLTString(file)
-
-		prop_count, props_size=ReadRaw(file, "2I")
-
-		props_buffer=file.read(props_size)
-		for i in range(prop_count):
-			name_index, prop_type=ReadRaw(file, "2I")
-			prop_name=ReadCString(props_buffer[name_index:])
-
-			data=file.read(4)
-			if prop_type==ObjectPropertyType.String or prop_type==ObjectPropertyType.CommandString or prop_type==ObjectPropertyType.Text:
-				data=struct.unpack("I", data)[0]
-				data=ReadCString(props_buffer[data:]) #struct.unpack(props_buffer[data:], "s")
-			elif prop_type==ObjectPropertyType.Vector or prop_type==ObjectPropertyType.Colour:
-				data=struct.unpack("I", data)[0]
-				data=struct.unpack("3f", props_buffer[data:data+12])
-				data=(data[0], data[2], data[1]) # reorder vector for Blender
-			elif prop_type==ObjectPropertyType.Float:
-				data=struct.unpack("f", data)[0]
-			elif prop_type==ObjectPropertyType.Int or prop_type==ObjectPropertyType.Flags:
-				data=struct.unpack("i", data)[0]
-			elif prop_type==ObjectPropertyType.Quaternion:
-				data=struct.unpack("I", data)[0]
-				data=struct.unpack("4f", props_buffer[data:data+16])
-				data=(data[3], data[0], data[2], data[1]) # reorder the quat for Blender
-			else:
-				raise ValueError("Unknown object property type {}".format(prop_type))
-
-			self.properties[prop_name]=data
-
-def ReadObjects(file):
-	collection=bpy.data.collections.new("Lights")
-	bpy.context.scene.collection.children.link(collection)
-
-	object_count=ReadRaw(file, "I")[0]
-
-	objects=[]
-	for i in range(object_count):
-		new_obj=Object()
-		new_obj.read(file)
-		objects.append(new_obj)
-
-		if new_obj.type_name in ["LightCube", "LightDirectional", "LightPoint", "LightPointFill", "LightSpot"]:
-			print(new_obj.properties)
-
-			light=bpy.data.lights.new(new_obj.properties["Name"], "POINT")
-			light.energy=new_obj.properties["LightRadius"]
-			light.color=new_obj.properties["LightColor"]
-			light.distance=0.0
-
-			light_obj=bpy.data.objects.new(new_obj.properties["Name"], light)
-			light_obj.location=new_obj.properties["Pos"]
-			light_obj.rotation_quaternion=new_obj.properties["Rotation"]
-
-			collection.objects.link(light_obj)
