@@ -1,4 +1,3 @@
-import os
 from math import ceil
 import bpy
 import bpy_extras

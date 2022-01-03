@@ -6,7 +6,7 @@ def ReadRaw(file, format):
 	#print(buf)
 	return buf
 
-def ReadVector(file): # should this be modified to reverse the Y/Z automagically?
+def ReadVector(file):
 	return ReadRaw(file, "3f")
 
 def ReadLTString(file):

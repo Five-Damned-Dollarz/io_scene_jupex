@@ -2,8 +2,7 @@
 
 *Extremely* WIP!
 
-[World00p specs](https://gist.github.com/Five-Damned-Dollarz/56fb8f497056ec443021ea4aad71409c)
-[Wld specs](https://gist.github.com/Five-Damned-Dollarz/7f7223f5128a495777212685244dd229)
+[World00p specs](https://gist.github.com/Five-Damned-Dollarz/56fb8f497056ec443021ea4aad71409c) - [Wld specs](https://gist.github.com/Five-Damned-Dollarz/7f7223f5128a495777212685244dd229)
 
 Currently supports:
  - Importing BSPs (FEAR 1 only!)
