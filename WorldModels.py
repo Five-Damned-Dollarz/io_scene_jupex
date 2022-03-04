@@ -125,7 +125,7 @@ def TestWorldModel(model: WorldModel, collection):
 	bm.verts.ensure_lookup_table()
 
 	for poly in model.polygons:
-		bmface=[bm.verts[vert_id] for vert_id in poly.vertex_ids]
+		bmface=[bm.verts[vert_id] for vert_id in reversed(poly.vertex_ids)]
 
 		try:
 			bm.faces.new(bmface)

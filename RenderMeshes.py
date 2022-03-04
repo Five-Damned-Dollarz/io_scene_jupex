@@ -302,7 +302,7 @@ class RenderSurface(object):
 
 			self.indices.append(verts)
 
-def ReadRenderMesh(file, section_counts, game_data_folder): # FIXME: game_data_folder needs to be dealt with better than this
+def ReadRenderMesh(file, section_counts, options):
 	_, surface_count, material_count=ReadRaw(file, "3I")
 	block_sizes=ReadRaw(file, "2I")
 
@@ -336,15 +336,18 @@ def ReadRenderMesh(file, section_counts, game_data_folder): # FIXME: game_data_f
 			#mat_name=r"Materials\Default.Mat00"
 			pass
 
-		material=Material()
-		try:
-			material.read(open(os.path.join(game_data_folder, mat_name), "rb"), game_data_folder)
-		except Exception as e:
-			print(repr(e))
-			material_errors.append(mat_name)
-			pass
+		if options.ImportMaterials:
+			material=Material()
+			try:
+				material.read(open(os.path.join(options.GameDataFolder, mat_name), "rb"), options.GameDataFolder)
+			except Exception as e:
+				print(repr(e))
+				material_errors.append(mat_name)
+				pass
 
-		materials.append(material)
+			materials.append(material)
+		else:
+			materials=None # FIXME: this is a terrible way to do it
 
 	collection=bpy.data.collections.new("Render Surfaces")
 	bpy.context.scene.collection.children.link(collection)
@@ -420,12 +423,14 @@ def TestRenderSurface(surface: RenderSurface, materials: List[Material], collect
 		uv=surface.vertices[loop.vertex_index].tex_coords
 		uv_layer.data[i].uv=uv
 
-	mesh.materials.append(materials[surface.material_id].material)
+	if materials!=None: # FIXME: this is not how this should be tested
+		mesh.materials.append(materials[surface.material_id].material)
 
 	mesh.validate(clean_customdata=False)
 	mesh.update(calc_edges=False)
 
 	collection.objects.link(mesh_obj)
 
-	if (materials[surface.material_id].name=="shadowvolume"):
-		mesh_obj.hide_set(True) # just to clean up the view a bit
+	if materials!=None: # FIXME: this is not how this should be tested
+		if (materials[surface.material_id].name=="shadowvolume"):
+			mesh_obj.hide_set(True) # just to clean up the view a bit

@@ -17,7 +17,7 @@ import bmesh
 from bpy.props import StringProperty, BoolProperty, FloatProperty, EnumProperty
 from mathutils import Vector
 
-from enum import IntEnum
+from enum import Enum
 
 import struct
 
@@ -36,6 +36,11 @@ importlib.reload(RenderMeshes)
 
 _GameDataFolder=r""
 
+class GameCodes(Enum):
+	FEAR1=399
+	District128=246
+	FEAR2=None
+
 class ImportOptions(object):
 	def __init__(self):
 		self.GameDataFolder=r""
@@ -46,6 +51,9 @@ class ImportOptions(object):
 		self.ImportMaterials=True
 		self.ImportObjects=False
 		#self.ImportNavMesh=False
+
+def importWorld(options: ImportOptions):
+	return
 
 ###
 
@@ -77,9 +85,9 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 
 	game_identity: EnumProperty(
 		items=[
-			("game_id_fear", "FEAR", "FEAR, FEAR: Extraction Point, and FEAR: Perseus Mandate", 0),
-			("game_id_district187", "District 187", "District 187, also known as S2 Son Silah", 1),
-			("game_id_fear_2", "FEAR 2", "FEAR 2: Project Origin", 2)
+			(GameCodes.FEAR1.name, "FEAR", "FEAR, FEAR: Extraction Point, and FEAR: Perseus Mandate", 0),
+			(GameCodes.District128.name, "District 187", "District 187, also known as S2 Son Silah", 1),
+			(GameCodes.FEAR2.name, "FEAR 2", "FEAR 2: Project Origin", 2)
 		],
 		name="Game",
 		description="Select the game the imported world is from",
@@ -98,7 +106,11 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		default=True
 	)
 
-	# TODO: import_materials: BoolProperty; improves performance if you only care about geometry
+	import_materials: BoolProperty(
+		name="Import Materials",
+		description="Warning: loading materials (including textures) can take a long time",
+		default=True
+	)
 
 	import_objects: BoolProperty(
 		name="Import Objects",
@@ -124,6 +136,7 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		box.label(text="Import Options")
 		box.row().prop(self, "import_bsps")
 		box.row().prop(self, "import_render_surfaces")
+		box.row().prop(self, "import_materials")
 		box.row().prop(self, "import_objects")
 		#box.row().prop(self, "import_nav_mesh")
 
@@ -133,9 +146,11 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		opts.GameId=self.game_identity
 		opts.ImportBsps=self.import_bsps
 		opts.ImportRenderSurfaces=self.import_render_surfaces
-		#opts.ImportMaterials=self.import_materials
+		opts.ImportMaterials=self.import_materials
 		opts.ImportObjects=self.import_objects
 		#opts.ImportNavMesh=self.import_nav_mesh
+
+		print(opts.GameId)
 
 		with open(self.filepath, "rb") as f:
 			header=Header()
@@ -145,12 +160,12 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 			if self.import_bsps:
 				f.seek(56) # not needed
 				wm_section=WorldModels.WorldModelSection()
-				wm_section.read(f, 399) # TODO: magic number from game_identity EnumProperty
+				wm_section.read(f, GameCodes[opts.GameId].value)
 
 			if self.import_render_surfaces:
 				f.seek(header.render_section)
 				render_section=ReadRaw(f, "10I")
-				RenderMeshes.ReadRenderMesh(f, render_section, opts.GameDataFolder)
+				RenderMeshes.ReadRenderMesh(f, render_section, opts)
 
 			if self.import_objects:
 				f.seek(header.object_section)
