@@ -85,7 +85,7 @@ class WorldModelSection(object):
 
 		count, _=ReadRaw(file, "2I")
 
-		_=ReadRaw(file, "{}b".format(ceil(count/8)))
+		_=ReadRaw(file, "{}B".format(ceil(count/8)))
 
 		counts=[count ^ magic_number for count in ReadRaw(file, "8I")]
 		bsp_name_count, bsp_names_length, plane_count, bsp_count, node_count, polygon_count, vertex_ref_count, vertex_count=counts
@@ -112,7 +112,7 @@ class WorldModelSection(object):
 		for i in world_models:
 			TestWorldModel(i, collection)
 
-def TestWorldModel(model: WorldModel, collection):
+def TestWorldModel(model, collection):
 	mesh=bpy.data.meshes.new("BSP")
 	mesh_obj=bpy.data.objects.new("World Model", mesh)
 

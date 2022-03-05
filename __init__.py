@@ -23,9 +23,14 @@ import struct
 
 # Python's import system sucks so much!
 from .utils import ReadRaw, ReadVector, ReadLTString, ReadCString
+
+# Jupiter EX
 from . import WorldModels
 from . import WorldObjects
 from . import RenderMeshes
+
+# Loki
+from . import WldBsp
 
 import importlib
 importlib.reload(WorldModels)
@@ -150,9 +155,16 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		opts.ImportObjects=self.import_objects
 		#opts.ImportNavMesh=self.import_nav_mesh
 
-		print(opts.GameId)
-
 		with open(self.filepath, "rb") as f:
+
+			# FIXME: need a better solution for this
+			if opts.GameId==GameCodes.FEAR2.name:
+				WldBsp.ReadWldFile(f)
+
+				SetCamera()
+
+				return {"FINISHED"}
+
 			header=Header()
 			header.read(f)
 			print(header)
@@ -171,16 +183,7 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 				f.seek(header.object_section)
 				WorldObjects.ReadObjects(f)
 
-		# massively increase camera clipping because 1000m is not enough for even a normal sized room
-		for area in bpy.context.screen.areas:
-			if area.type=="VIEW_3D":
-				for space in area.spaces:
-					if space.type=="VIEW_3D":
-						space.overlay.normals_length=25.0 # FIXME: remove this later!
-						space.shading.show_backface_culling=True
-
-						if space.clip_end<10000.0:
-							space.clip_end=100000.0
+		SetCamera()
 
 		return {"FINISHED"}
 
@@ -195,6 +198,19 @@ def register():
 def unregister():
 	bpy.utils.unregister_class(WorldLoader)
 	bpy.types.TOPBAR_MT_file_import.remove(WorldLoader.menu_func_import)
+
+# camera util
+def SetCamera():
+	# massively increase camera clipping because 1000m is not enough for even a normal sized room
+	for area in bpy.context.screen.areas:
+		if area.type=="VIEW_3D":
+			for space in area.spaces:
+				if space.type=="VIEW_3D":
+					space.overlay.normals_length=25.0 # FIXME: remove this later!
+					space.shading.show_backface_culling=True
+
+					if space.clip_end<10000.0:
+						space.clip_end=100000.0
 
 ### Header Section
 
