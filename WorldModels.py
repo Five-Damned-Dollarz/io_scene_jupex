@@ -34,7 +34,7 @@ class BspPolygon(object):
 
 class WorldModel(object):
 	def __init__(self):
-		self._=0
+		self.names=[]
 
 		self.polygons=[]
 		self.vertices=[]
@@ -68,9 +68,13 @@ class WorldModel(object):
 
 # returns array of strings correctly ordered for: bsp.name=str_table[bsp.id]
 def readStringTable(count, raws, indices):
-	strings_out=[None]*count
+	strings_out=[]
+
+	for _ in range(count):
+		strings_out.append([])
+
 	for ind in indices: # (str idx, bsp id)
-		strings_out[ind[1]]=ReadCString(raws[ind[0]:])
+		strings_out[ind[1]].append(ReadCString(raws[ind[0]:]))
 
 	return strings_out
 
@@ -96,14 +100,17 @@ class WorldModelSection(object):
 		for _ in range(bsp_name_count):
 			bsp_name_indices.append(ReadRaw(file, "2I"))
 
+		world_model_names=readStringTable(bsp_count, bsp_names, bsp_name_indices)
+
 		planes=[]
 		for _ in range(plane_count):
 			planes.append(ReadVector(file))
 
 		world_models=[]
-		for _ in range(bsp_count):
+		for i in range(bsp_count):
 			world_model=WorldModel()
 			world_model.read(file)
+			world_model.names=world_model_names[i]
 
 			world_models.append(world_model)
 
@@ -114,7 +121,7 @@ class WorldModelSection(object):
 
 def TestWorldModel(model, collection):
 	mesh=bpy.data.meshes.new("BSP")
-	mesh_obj=bpy.data.objects.new("World Model", mesh)
+	mesh_obj=bpy.data.objects.new(model.names[0], mesh)
 
 	bm=bmesh.new()
 	bm.from_mesh(mesh)

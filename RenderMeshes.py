@@ -210,6 +210,7 @@ class VertexDefinition(object):
 			elif prop.format==VertexPropertyFormat.SkeletalIndex:
 				pack_str="4b" # 4 bytes
 			elif prop.format==VertexPropertyFormat.Exit:
+				raise ValueError("Vertex property Exit found")
 				continue # this /should/ never activate since we chop the final entry off when reading the descriptors
 			else:
 				raise ValueError("Invalid vertex property format")

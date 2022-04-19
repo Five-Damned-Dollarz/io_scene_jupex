@@ -41,7 +41,7 @@ importlib.reload(RenderMeshes)
 
 _GameDataFolder=r""
 
-class GameCodes(Enum):
+class GameCode(Enum):
 	FEAR1=399
 	District128=246
 	FEAR2=None
@@ -90,9 +90,9 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 
 	game_identity: EnumProperty(
 		items=[
-			(GameCodes.FEAR1.name, "FEAR", "FEAR, FEAR: Extraction Point, and FEAR: Perseus Mandate", 0),
-			(GameCodes.District128.name, "District 187", "District 187, also known as S2 Son Silah", 1),
-			(GameCodes.FEAR2.name, "FEAR 2", "FEAR 2: Project Origin", 2)
+			(GameCode.FEAR1.name, "FEAR", "FEAR, FEAR: Extraction Point, and FEAR: Perseus Mandate", 0),
+			(GameCode.District128.name, "District 187", "District 187, also known as S2 Son Silah", 1),
+			(GameCode.FEAR2.name, "FEAR 2", "FEAR 2: Project Origin", 2)
 		],
 		name="Game",
 		description="Select the game the imported world is from",
@@ -158,7 +158,7 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		with open(self.filepath, "rb") as f:
 
 			# FIXME: need a better solution for this
-			if opts.GameId==GameCodes.FEAR2.name:
+			if opts.GameId==GameCode.FEAR2.name:
 				WldBsp.ReadWldFile(f)
 
 				SetCamera()
@@ -172,7 +172,7 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 			if self.import_bsps:
 				f.seek(56) # not needed
 				wm_section=WorldModels.WorldModelSection()
-				wm_section.read(f, GameCodes[opts.GameId].value)
+				wm_section.read(f, GameCode[opts.GameId].value)
 
 			if self.import_render_surfaces:
 				f.seek(header.render_section)
@@ -198,6 +198,15 @@ def register():
 def unregister():
 	bpy.utils.unregister_class(WorldLoader)
 	bpy.types.TOPBAR_MT_file_import.remove(WorldLoader.menu_func_import)
+
+# detect file type
+def DetectFileType(file, game_code):
+	_=ReadRaw(file, "I")[0]
+	file.seek(0)
+	if _ & 0xFFFFFC00!=0:
+		return GameCode.FEAR2.name
+	else:
+		return game_code
 
 # camera util
 def SetCamera():

@@ -40,7 +40,8 @@ class Object(object):
 			elif prop_type==ObjectPropertyType.Vector or prop_type==ObjectPropertyType.Colour:
 				data=struct.unpack("I", data)[0]
 				data=struct.unpack("3f", props_buffer[data:data+12])
-				data=(data[0], data[2], data[1]) # reorder vector for Blender
+				if prop_type==ObjectPropertyType.Vector:
+					data=(data[0], data[2], data[1]) # reorder vector for Blender
 			elif prop_type==ObjectPropertyType.Float:
 				data=struct.unpack("f", data)[0]
 			elif prop_type==ObjectPropertyType.Int or prop_type==ObjectPropertyType.Flags:
@@ -57,6 +58,12 @@ class Object(object):
 def ReadObjects(file):
 	collection=bpy.data.collections.new("Lights")
 	bpy.context.scene.collection.children.link(collection)
+
+	wm_collection=bpy.data.collections["World Models"]
+
+	# TODO: new name, and make instances of bsps for each empty instead of ignoring duplicates
+	empties_collection=bpy.data.collections.new("Test WMs")
+	bpy.context.scene.collection.children.link(empties_collection)
 
 	object_count=ReadRaw(file, "I")[0]
 
@@ -79,3 +86,18 @@ def ReadObjects(file):
 			light_obj.rotation_quaternion=new_obj.properties["Rotation"]
 
 			collection.objects.link(light_obj)
+		elif new_obj.type_name in ["WorldModel", "RotatingDoor", "RotatingSwitch", "RotatingWorldModel", "SlidingDoor", "SlidingSwitch", "SlidingWorldModel", "SpinningWorldModel"]:
+			#print(new_obj.properties["Name"])
+
+			empty=bpy.data.objects.new(new_obj.properties["Name"], None)
+			empty.location=new_obj.properties["Pos"]
+			empty.rotation_quaternion=new_obj.properties["Rotation"]
+
+			empties_collection.objects.link(empty)
+
+			# FIXME: eventually I should do this properly, world models have all their possible names
+			try:
+				wm_collection.objects[new_obj.properties["Name"]].parent=empty
+			except KeyError as e:
+				print(repr(e))
+				pass
