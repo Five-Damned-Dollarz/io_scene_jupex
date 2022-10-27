@@ -43,8 +43,9 @@ _GameDataFolder=r""
 
 class GameCode(Enum):
 	FEAR1=399
-	District128=246
+	District187=246
 	FEAR2=None
+	Condemned=None
 
 class ImportOptions(object):
 	def __init__(self):
@@ -91,8 +92,9 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 	game_identity: EnumProperty(
 		items=[
 			(GameCode.FEAR1.name, "FEAR", "FEAR, FEAR: Extraction Point, and FEAR: Perseus Mandate", 0),
-			(GameCode.District128.name, "District 187", "District 187, also known as S2 Son Silah", 1),
-			(GameCode.FEAR2.name, "FEAR 2", "FEAR 2: Project Origin", 2)
+			(GameCode.District187.name, "District 187", "District 187, also known as S2 Son Silah", 1),
+			(GameCode.FEAR2.name, "FEAR 2", "FEAR 2: Project Origin", 2),
+			(GameCode.Condemned.name, "Condemned", "Condemned", 3)
 		],
 		name="Game",
 		description="Select the game the imported world is from",
@@ -158,7 +160,7 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		with open(self.filepath, "rb") as f:
 
 			# FIXME: need a better solution for this
-			if opts.GameId==GameCode.FEAR2.name:
+			if opts.GameId in [GameCode.FEAR2.name, GameCode.Condemned.name]:
 				WldBsp.ReadWldFile(f)
 
 				SetCamera()

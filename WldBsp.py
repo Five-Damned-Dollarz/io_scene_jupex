@@ -8,12 +8,14 @@ import struct
 
 from .utils import ReadRaw, ReadVector, ReadLTString, ReadCString
 
-from .WorldModels import TestWorldModel
+from .WorldModels import TestWorldModel, readStringTable
 
 ### Wld BSP section
 
 _MagicConstant=b"WLDP"
-_VersionConstant=126
+_VersionConstants=[113, 126]
+
+_LastVersion=0
 
 class WldHeader(object):
 	def __init__(self):
@@ -26,8 +28,11 @@ class WldHeader(object):
 		if self.magic!=_MagicConstant:
 			raise ValueError("Incorrect file identifier {}, expected {}".format(self.magic, _MagicConstant))
 
-		if self.version!=_VersionConstant:
+		if self.version not in _VersionConstants:
 			raise ValueError("Incorrect world version {}, expected {}".format(self.version, _VersionConstant))
+
+		global _LastVersion
+		_LastVersion=self.version
 
 		_=ReadVector(file)
 		_=ReadVector(file)
@@ -57,21 +62,26 @@ class WldModelsSection(object):
 		self.node_count=ReadRaw(file, "I")[0]
 		self.subdivision_flags=ReadRaw(file, "{}B".format(ceil(self.node_count/8)))
 
+		if _LastVersion==_VersionConstants[0]:
+			_=ReadRaw(file, "I")
+
 		self.string_count, self.string_length=ReadRaw(file, "II")
 		self.normal_count, self.bsp_count=ReadRaw(file, "II")
 		_=ReadRaw(file, "4I")
 
-		self.float_count=ReadRaw(file, "I")[0]
-		self.floats=ReadRaw(file, "{}f".format(self.float_count))
+		if _LastVersion==_VersionConstants[1]:
+			self.float_count=ReadRaw(file, "I")[0]
+			self.floats=ReadRaw(file, "{}f".format(self.float_count))
 
-		self.strings=ReadRaw(file, "{}c".format(self.string_length))
-
-		#print(self.node_count, self.subdivision_flags, self.string_count, self.string_length, self.normal_count, self.bsp_count)
+		#self.strings=ReadRaw(file, "{}c".format(self.string_length))
+		self.strings=file.read(self.string_length)
 
 		self.string_entries=[]
 		for i in range(self.string_count):
 			temp_entry=ReadRaw(file, "II")
 			self.string_entries.append(temp_entry)
+
+		self.strings=readStringTable(self.bsp_count, self.strings, self.string_entries)
 
 		self.normals=[]
 		for i in range(self.normal_count):
@@ -105,7 +115,12 @@ class WldUnknownTable(object):
 		_=None
 
 	def read(self, file):
-		_=ReadRaw(file, "Ihh")
+		if _LastVersion==_VersionConstants[0]:
+			_=ReadRaw(file, "Iii")
+		elif _LastVersion==_VersionConstants[1]:
+			_=ReadRaw(file, "Ihh")
+		else:
+			raise Exception(f"Trying to read WldUnknownTable with invalid version: {_LastVersion}")
 
 class WldWorldModel(object):
 	def __init__(self):
@@ -130,9 +145,10 @@ class WldWorldModel(object):
 		_=ReadVector(file)
 		_=ReadVector(file)
 
-		self.vertex_counts=ReadRaw(file, "{}B".format(self.polygon_count))
+		if _LastVersion==_VersionConstants[0]:
+			_=ReadRaw(file, "I")
 
-		#print(self.vertex_count, self.polygon_count, self.unknown_table_count)
+		self.vertex_counts=ReadRaw(file, "{}B".format(self.polygon_count))
 
 		self.polygons=[]
 		for i in range(self.polygon_count):
@@ -163,6 +179,7 @@ def ReadWldFile(file):
 	for i in range(model_section.bsp_count):
 		temp_wm=WldWorldModel()
 		temp_wm.read(file)
+		temp_wm.names=model_section.strings[i]
 		bsps.append(temp_wm)
 
 	collection=bpy.data.collections.new("FEAR 2 BSPs")
