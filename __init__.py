@@ -32,10 +32,14 @@ from . import RenderMeshes
 # Loki
 from . import WldBsp
 
+#Lithtech general
+from . import lithtech_ascii as lta
+
 import importlib
 importlib.reload(WorldModels)
 importlib.reload(WorldObjects)
 importlib.reload(RenderMeshes)
+importlib.reload(WldBsp)
 
 ###
 
@@ -193,13 +197,42 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 	def menu_func_import(self, context):
 		self.layout.operator(WorldLoader.bl_idname, text='Lithtech JupEx World (.world00p)')
 
+class WorldExporter(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
+	bl_idname="io_scene_jupex.world_exporter"
+	bl_label="Export Jupiter EX World"
+
+	filename_ext=".world00a"
+
+	filter_glob: StringProperty(
+		default="*.world00a",
+		options={'HIDDEN'},
+		maxlen=255,
+	)
+
+	def execute(self, context):
+		with open(self.filepath, "w") as f:
+			f.write(lta.write())
+
+		print("world00a export called")
+		return {"FINISHED"}
+
+	@staticmethod
+	def menu_func_export(self, context):
+		self.layout.operator(WorldExporter.bl_idname, text='Lithtech JupEx World (.world00a)')
+
 def register():
 	bpy.utils.register_class(WorldLoader)
 	bpy.types.TOPBAR_MT_file_import.append(WorldLoader.menu_func_import)
 
+	bpy.utils.register_class(WorldExporter)
+	bpy.types.TOPBAR_MT_file_export.append(WorldExporter.menu_func_export)
+
 def unregister():
 	bpy.utils.unregister_class(WorldLoader)
 	bpy.types.TOPBAR_MT_file_import.remove(WorldLoader.menu_func_import)
+
+	bpy.utils.unregister_class(WorldExporter)
+	bpy.types.TOPBAR_MT_file_export.remove(WorldExporter.menu_func_export)
 
 # detect file type
 def DetectFileType(file, game_code):
