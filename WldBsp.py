@@ -15,7 +15,7 @@ from .WorldModels import TestWorldModel, readStringTable
 _MagicConstant=b"WLDP"
 _VersionConstants=[113, 126]
 
-_LastVersion=0
+g_LastVersion=0
 
 class WldHeader(object):
 	def __init__(self):
@@ -31,8 +31,8 @@ class WldHeader(object):
 		if self.version not in _VersionConstants:
 			raise ValueError("Incorrect world version {}, expected {}".format(self.version, _VersionConstant))
 
-		global _LastVersion
-		_LastVersion=self.version
+		global g_LastVersion
+		g_LastVersion=self.version
 
 		_=ReadVector(file)
 		_=ReadVector(file)
@@ -62,14 +62,14 @@ class WldModelsSection(object):
 		self.node_count=ReadRaw(file, "I")[0]
 		self.subdivision_flags=ReadRaw(file, "{}B".format(ceil(self.node_count/8)))
 
-		if _LastVersion==_VersionConstants[0]:
+		if g_LastVersion==_VersionConstants[0]:
 			_=ReadRaw(file, "I")
 
 		self.string_count, self.string_length=ReadRaw(file, "II")
 		self.normal_count, self.bsp_count=ReadRaw(file, "II")
 		_=ReadRaw(file, "4I")
 
-		if _LastVersion==_VersionConstants[1]:
+		if g_LastVersion==_VersionConstants[1]:
 			self.float_count=ReadRaw(file, "I")[0]
 			self.floats=ReadRaw(file, "{}f".format(self.float_count))
 
@@ -115,12 +115,12 @@ class WldUnknownTable(object):
 		_=None
 
 	def read(self, file):
-		if _LastVersion==_VersionConstants[0]:
+		if g_LastVersion==_VersionConstants[0]:
 			_=ReadRaw(file, "Iii")
-		elif _LastVersion==_VersionConstants[1]:
+		elif g_LastVersion==_VersionConstants[1]:
 			_=ReadRaw(file, "Ihh")
 		else:
-			raise Exception(f"Trying to read WldUnknownTable with invalid version: {_LastVersion}")
+			raise Exception(f"Trying to read WldUnknownTable with invalid version: {g_LastVersion}")
 
 class WldWorldModel(object):
 	def __init__(self):
@@ -145,7 +145,7 @@ class WldWorldModel(object):
 		_=ReadVector(file)
 		_=ReadVector(file)
 
-		if _LastVersion==_VersionConstants[0]:
+		if g_LastVersion==_VersionConstants[0]:
 			_=ReadRaw(file, "I")
 
 		self.vertex_counts=ReadRaw(file, "{}B".format(self.polygon_count))
