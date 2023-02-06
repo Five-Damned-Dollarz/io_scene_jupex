@@ -120,6 +120,73 @@ class UvMatrix(object):
 	def __str__(self):
 		return repr(self)
 
+def OpqArea(vec_1, vec_2, vec_3):
+	area_1=vec_2-vec_1
+	area_2=vec_3-vec_1
+
+	return area_1.x*area_2.y-area_2.x*area_1.y
+
+def OpqCoords(vec_1, vec_2, vec_3, vec):
+	tri_area=OpqArea(vec_1, vec_2, vec_3)
+
+	if (abs(tri_area)<0.00000001):
+		return Vector((1.0, 0.0, 0.0))
+
+	u=OpqArea(vec_2, vec_3, vec)/tri_area
+	v=OpqArea(vec_3, vec_1, vec)/tri_area
+	w=1.0-u-v
+
+	return Vector((u, v, w))
+
+def CalculateOpq(vert_1, vert_2, vert_3, uv_1, uv_2, uv_3, tex_w, tex_h):
+	uv_1=Vector((uv_1.x, -uv_1.y, 0.0))
+	uv_2=Vector((uv_2.x, -uv_2.y, 0.0))
+	uv_3=Vector((uv_3.x, -uv_3.y, 0.0))
+
+	bary_o=OpqCoords(uv_1, uv_2, uv_3, Vector((0.0, 0.0, 0.0)))
+	bary_p=OpqCoords(uv_1, uv_2, uv_3, Vector((1.0, 0.0, 0.0)))
+	bary_q=OpqCoords(uv_1, uv_2, uv_3, Vector((0.0, 1.0, 0.0)))
+
+	o=(bary_o.x*vert_1)+(bary_o.y*vert_2)+(bary_o.z*vert_3)
+	p=(bary_p.x*vert_1)+(bary_p.y*vert_2)+(bary_p.z*vert_3)
+	q=(bary_q.x*vert_1)+(bary_q.y*vert_2)+(bary_q.z*vert_3)
+
+	p=p-o
+	q=q-o
+
+	p_len=p.length
+
+	p_len=p_len*(1.0/tex_w)
+	p_len=1.0/p_len
+
+	q_len=q.length
+	q_len=q_len*(1.0/tex_h)
+	q_len=1.0/q_len
+
+	p.normalize()
+	q.normalize()
+
+	r=q.cross(p)
+	p_new=r.cross(q)
+	q_new=p.cross(r)
+
+	p_new.normalize()
+	q_new.normalize()
+
+	p_scale=1.0/p.dot(p_new)
+	q_scale=1.0/q.dot(q_new)
+
+	r=q_new.cross(p_new)
+
+	p_new=p_new*p_len*p_scale
+	q_new=q_new*q_len*q_scale
+
+	r.normalize()
+	p=p_new+r
+	q=q_new-(p_new.dot(q_new)*r)
+
+	return UvMatrix((o, p, q))
+
 def write():
 	main_node=Node("world")
 
@@ -144,6 +211,25 @@ def write():
 	for poly in objects[0].data.polygons:
 		editpoly_node=polylist_node.createChild("editpoly")
 		editpoly_node.createChild("f", [i for i in poly.vertices])
+
+		mappings_node=editpoly_node.createChild("mappings", None, True)
+
+		_TextureScale=1
+		_UvLayer=objects[0].data.uv_layers[0]
+
+		verts=[]
+		uvs=[]
+
+		for loop_idx in poly.loop_indices:
+			v1=objects[0].data.loops[loop_idx].vertex_index
+
+			verts.append(objects[0].data.vertices[v1])
+			uvs.append(_UvLayer.data[loop_idx].uv)
+
+		opq=CalculateOpq(verts[0].co, verts[1].co, verts[2].co, uvs[0], uvs[1], uvs[2], _TextureScale, _TextureScale)
+
+		uv_node=mappings_node.createChild("0")
+		texture_info_node=uv_node.createChild("textureinfo", opq)
 
 	###
 
