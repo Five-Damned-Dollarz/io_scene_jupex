@@ -1,3 +1,48 @@
+'''
+Rough LTA format:
+
+world
+	header
+		versioncode 2
+	polyhedronlist
+		polyhedron
+			color
+			pointlist points as (3x[0x########] 3x[0-255])
+			polylist
+				editpoly
+					f (3x [vertex index])
+					material "filename string"
+					occlusion "unknown string"
+					mappings (
+						index to material input [usually 0-4] (
+							textureinfo ([3x3 UV matrix?])
+						)
+					)
+	nodehierarchy
+		worldnode
+			type null/brush
+			brushindex idx [only for type brush]
+			label [only for type null]
+			nodeid [incremental unique?]
+			flags [( worldroot [if has children?] expanded )]
+			properties
+				name "name string"
+				propid idx
+			childlist (worldnode)
+	globalproplist
+		proplist (
+			( string "Name" (  ) ( data "name string") )
+			( string "Type" ( staticlist ) ( data ["Normal", "RenderOnly"] ) )
+			( bool "NotAStep" (  ) ( data 0 ))
+			( bool "ClipLight" (  ) ( data 0 ))
+			( real "CreaseAngle" (  ) ( data 45.000000 ))
+			( string "TangentMethod" ( staticlist ) ( data "Kaldera") )
+			( string "ShadowLOD" ( staticlist ) ( data "Low") )
+			( vector "Pos" ( hidden distance ) ( data ( vector (0.000000 0.000000 0.000000) ) ) )
+			( rotation "Rotation" ( hidden ) ( data (eulerangles (0.028577 0.000000 0.000000) ) ) )
+		)
+'''
+
 import bpy
 import struct
 from mathutils import Vector
@@ -193,43 +238,70 @@ def write():
 	header_node=main_node.createChild("header", None, True)
 	version_node=header_node.createChild("versioncode", 2)
 
-	polylist_node=main_node.createChild("polyhedronlist", None, True)
+	polyhedron_list_node=main_node.createChild("polyhedronlist", None, True)
 
-	### brush geo
-	poly_node=polylist_node.createChild("polyhedron", None, True)
-	poly_node.createChild("color", (255, 255, 255))
-
-	pointlist_node=poly_node.createChild("pointlist")
-
+	### for each object we're exporting create a geo list
 	objects=[obj for obj in bpy.context.scene.objects if obj.type=='MESH']
 
-	for (i, vert) in enumerate(objects[0].data.vertices):
-		pointlist_node.createChild("", PointListEntry(vert.co))
+	for obj in objects:
 
-	polylist_node=poly_node.createChild("polylist", None, True)
+		### brush geo
+		poly_node=polyhedron_list_node.createChild("polyhedron", None, True)
+		poly_node.createChild("color", (255, 255, 255))
 
-	for poly in objects[0].data.polygons:
-		editpoly_node=polylist_node.createChild("editpoly")
-		editpoly_node.createChild("f", [i for i in poly.vertices])
+		pointlist_node=poly_node.createChild("pointlist")
 
-		mappings_node=editpoly_node.createChild("mappings", None, True)
+		for (i, vert) in enumerate(obj.data.vertices):
+			pointlist_node.createChild("", PointListEntry(vert.co))
 
-		_TextureScale=1
-		_UvLayer=objects[0].data.uv_layers[0]
+		polylist_node=poly_node.createChild("polylist", None, True)
 
-		verts=[]
-		uvs=[]
+		for poly in obj.data.polygons:
+			editpoly_node=polylist_node.createChild("editpoly")
+			editpoly_node.createChild("f", [i for i in poly.vertices])
+			#editpoly_node.createChild("material", r"Prefabs\Systemic\Vehicles\c2_exterior02.Mat00")
+			#editpoly_node.createChild("occlusion", "")
 
-		for loop_idx in poly.loop_indices:
-			v1=objects[0].data.loops[loop_idx].vertex_index
+			mappings_node=editpoly_node.createChild("mappings", None, True)
 
-			verts.append(objects[0].data.vertices[v1])
-			uvs.append(_UvLayer.data[loop_idx].uv)
+			_TextureScale=1
+			try:
+				_UvLayer=obj.data.uv_layers[0]
+			except:
+				_UvLayer=None
 
-		opq=CalculateOpq(verts[0].co, verts[1].co, verts[2].co, uvs[0], uvs[1], uvs[2], _TextureScale, _TextureScale)
+			verts=[]
+			uvs=[]
 
-		uv_node=mappings_node.createChild("0")
-		texture_info_node=uv_node.createChild("textureinfo", opq)
+			for loop_idx in poly.loop_indices:
+				v1=obj.data.loops[loop_idx].vertex_index
+
+				verts.append(obj.data.vertices[v1])
+
+				if _UvLayer!=None:
+					temp_uv=_UvLayer.data[loop_idx].uv;
+				else:
+					temp_uv=Vector((0, 0))
+
+				uvs.append(temp_uv)
+
+			try:
+				opq=CalculateOpq(verts[0].co, verts[1].co, verts[2].co, uvs[0], uvs[1], uvs[2], _TextureScale, _TextureScale)
+			except Exception as e:
+				print("error", e, "creating opq values for", obj.name_full);
+				opq=UvMatrix((Vector((0, 0, 0)), Vector((0, 0, 0)), Vector((0, 0, 0))))
+
+			uv_node=mappings_node.createChild("0")
+			texture_info_node=uv_node.createChild("textureinfo", opq)
+
+			#uv_node=mappings_node.createChild("1")
+			#texture_info_node=uv_node.createChild("textureinfo", UvMatrix(((66.0, 50.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))))
+
+			#uv_node=mappings_node.createChild("2")
+			#texture_info_node=uv_node.createChild("textureinfo", UvMatrix(((66.0, 50.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))))
+
+			#uv_node=mappings_node.createChild("3")
+			#texture_info_node=uv_node.createChild("textureinfo", UvMatrix(((66.0, 50.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))))
 
 	###
 
@@ -246,23 +318,29 @@ def write():
 	proplist_node.createChild("propid", 0)
 
 	children_node=world_node.createChild("childlist", None, True)
-	child_node=children_node.createChild("worldnode")
-	child_node.createChild("type", WorldNodeType.brush)
-	child_node.createChild("brushindex", 0) # only for type brush
-	child_node.createChild("nodeid", 70)
-	flags_node=child_node.createChild("flags") # ( worldroot [if has children?] expanded )
-	flags_node.createChild("", None)
 
-	proplist_node=child_node.createChild("properties")
-	proplist_node.createChild("name", "Brush")
-	proplist_node.createChild("propid", 1)
+	# TODO: convert Blender's tree hierarchy as much as possible
+	for i, obj in enumerate(objects):
+
+		child_node=children_node.createChild("worldnode")
+		child_node.createChild("type", WorldNodeType.brush)
+		child_node.createChild("brushindex", i) # only for type brush
+		child_node.createChild("nodeid", 70+i)
+		flags_node=child_node.createChild("flags") # ( worldroot [if has children?] expanded )
+		flags_node.createChild("", None)
+
+		proplist_node=child_node.createChild("properties")
+		proplist_node.createChild("name", "Brush")
+		proplist_node.createChild("propid", i+1)
 	###
 
 	global_proplist_node=main_node.createChild("globalproplist", None, True)
+	proplist_node=global_proplist_node.createChild("proplist", None, True)
 	### node properties
-	proplist_node=global_proplist_node.createChild("proplist", None, True)
-	proplist_node=global_proplist_node.createChild("proplist", None, True)
-	#proplist_node.createChild("string", "Name") # FIXME
+	for i, obj in enumerate(objects):
+		proplist_node=global_proplist_node.createChild("proplist", None, True)
+		prop_name_node=proplist_node.createChild("string", "Name")
+		prop_name_node.createChild("data", obj.name_full)
 	'''
 	proplist (
 		( string "Name" (  ) ( data "name string") )
