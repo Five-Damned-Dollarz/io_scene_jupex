@@ -50,6 +50,7 @@ class GameCode(Enum):
 	District187=246
 	FEAR2=None
 	Condemned=None
+	PetaCity=1120
 
 class ImportOptions(object):
 	def __init__(self):
@@ -98,7 +99,8 @@ class WorldLoader(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 			(GameCode.FEAR1.name, "FEAR", "FEAR, FEAR: Extraction Point, and FEAR: Perseus Mandate", 0),
 			(GameCode.District187.name, "District 187", "District 187, also known as S2 Son Silah", 1),
 			(GameCode.FEAR2.name, "FEAR 2", "FEAR 2: Project Origin", 2),
-			(GameCode.Condemned.name, "Condemned", "Condemned", 3)
+			(GameCode.Condemned.name, "Condemned", "Condemned", 3),
+			(GameCode.PetaCity.name, "PetaCity", "PetaCity", 4),
 		],
 		name="Game",
 		description="Select the game the imported world is from",
